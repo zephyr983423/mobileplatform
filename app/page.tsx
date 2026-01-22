@@ -1,0 +1,23 @@
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth/config";
+
+export default async function HomePage() {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  // Role-based redirect
+  switch (session.user.role) {
+    case "CUSTOMER":
+      redirect("/me");
+    case "STAFF":
+      redirect("/staff/dashboard");
+    case "BOSS":
+      redirect("/admin/dashboard");
+    default:
+      redirect("/login");
+  }
+}

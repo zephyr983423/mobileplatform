@@ -1,0 +1,253 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum Role {
+  BOSS
+  STAFF
+  CUSTOMER
+}
+
+enum Permission {
+  // Case permissions
+  CASE_READ_ALL
+  CASE_READ_ASSIGNED
+  CASE_WRITE
+  CASE_DELETE
+
+  // Device permissions
+  DEVICE_READ
+  DEVICE_WRITE
+  DEVICE_DELETE
+
+  // Shipment/Logistics permissions
+  SHIPMENT_READ
+  SHIPMENT_WRITE
+
+  // User management
+  USER_MANAGE
+  USER_READ_ALL
+
+  // Audit
+  AUDIT_READ
+
+  // Customer management
+  CUSTOMER_READ_ALL
+  CUSTOMER_WRITE
+}
+
+enum ServiceStatus {
+  PENDING          // Case created, not started
+  RECEIVED         // Device received at warehouse
+  DIAGNOSING       // Under diagnosis
+  AWAITING_PARTS   // Waiting for parts
+  REPAIRING        // Under repair
+  QA               // Quality assurance
+  READY_TO_SHIP    // Fixed, ready to ship
+  SHIPPING         // In transit to customer
+  DELIVERED        // Delivered to customer
+  CLOSED           // Case closed
+  RETURNED         // Customer returned (unhappy)
+  CANCELLED        // Cancelled
+}
+
+enum ShipmentType {
+  INBOUND   // Customer → Warehouse
+  OUTBOUND  // Warehouse → Customer
+}
+
+enum ShipmentStatus {
+  PENDING
+  IN_TRANSIT
+  ARRIVED
+  SIGNED
+  FAILED
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String   // Hashed with bcrypt
+  role      Role
+  email     String?  @unique
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  customer         Customer?         @relation("UserCustomer")
+  staffPermissions StaffPermission[]
+  auditLogs        AuditLog[]
+  statusEvents     StatusEvent[]
+  shipments        Shipment[]
+
+  @@index([username])
+  @@index([role])
+}
+
+model StaffPermission {
+  id         String     @id @default(cuid())
+  userId     String
+  permission Permission
+  createdAt  DateTime   @default(now())
+  createdBy  String?    // Which BOSS assigned this
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permission])
+  @@index([userId])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation("UserCustomer", fields: [userId], references: [id], onDelete: Cascade)
+  devices Device[]
+
+  @@index([userId])
+  @@index([phone])
+}
+
+model Device {
+  id         String   @id @default(cuid())
+  customerId String
+  brand      String // Apple, Samsung, etc.
+  model      String // iPhone 14 Pro, Galaxy S23
+  imei       String? // Optional, may be missing
+  serial     String? // Optional
+  color      String?
+  storage    String? // 128GB, 256GB
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  serviceCases ServiceCase[]
+
+  @@index([customerId])
+  @@index([imei])
+}
+
+model ServiceCase {
+  id          String   @id @default(cuid())
+  deviceId    String
+  caseNumber  String   @unique // e.g., "CS20240115001"
+  title       String // "Battery Replacement", "Screen Repair"
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  closedAt    DateTime?
+
+  device        Device         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  serviceRounds ServiceRound[]
+
+  @@index([deviceId])
+  @@index([caseNumber])
+  @@index([createdAt])
+}
+
+model ServiceRound {
+  id            String        @id @default(cuid())
+  serviceCaseId String
+  roundNo       Int // 1, 2, 3... (for rework)
+  issue         String // Customer complaint or diagnosis
+  diagnosis     String? // Technician's findings
+  resolution    String? // What was done
+  cost          Float? // Repair cost
+  warrantyDays  Int? // Warranty period in days
+  status        ServiceStatus @default(PENDING)
+  startedAt     DateTime      @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  serviceCase  ServiceCase   @relation(fields: [serviceCaseId], references: [id], onDelete: Cascade)
+  statusEvents StatusEvent[]
+  shipments    Shipment[]
+
+  @@unique([serviceCaseId, roundNo])
+  @@index([serviceCaseId])
+  @@index([status])
+}
+
+model StatusEvent {
+  id             String        @id @default(cuid())
+  serviceRoundId String
+  fromStatus     ServiceStatus?
+  toStatus       ServiceStatus
+  notes          String?
+  location       String? // "Warehouse A", "Repair Desk 3", "In Transit"
+  operatorId     String
+  createdAt      DateTime      @default(now())
+
+  serviceRound ServiceRound @relation(fields: [serviceRoundId], references: [id], onDelete: Cascade)
+  operator     User         @relation(fields: [operatorId], references: [id])
+
+  @@index([serviceRoundId])
+  @@index([createdAt])
+}
+
+model Shipment {
+  id               String         @id @default(cuid())
+  serviceRoundId   String
+  type             ShipmentType
+  trackingNumber   String?
+  carrier          String? // "SF Express", "UPS", etc.
+  status           ShipmentStatus @default(PENDING)
+  origin           String?
+  destination      String?
+  currentLocation  String?
+  notes            String?
+  shippedAt        DateTime?
+  estimatedArrival DateTime?
+  actualArrival    DateTime?
+  operatorId       String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  serviceRound ServiceRound @relation(fields: [serviceRoundId], references: [id], onDelete: Cascade)
+  operator     User         @relation(fields: [operatorId], references: [id])
+
+  @@index([serviceRoundId])
+  @@index([trackingNumber])
+  @@index([status])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String // "CREATE_USER", "UPDATE_STATUS", "ASSIGN_PERMISSION", etc.
+  resource  String // "User", "ServiceCase", "StaffPermission", etc.
+  resourceId String?
+  details   String? // JSON string with before/after values
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([resource])
+}
