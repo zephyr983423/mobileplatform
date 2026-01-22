@@ -2,7 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { Role } from "@prisma/client";
+import { Role, Permission } from "@prisma/client";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -63,7 +63,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
         session.user.customerId = token.customerId as string | undefined;
-        session.user.permissions = token.permissions as string[] | undefined;
+        session.user.permissions = token.permissions as Permission[] | undefined;
       }
       return session;
     },

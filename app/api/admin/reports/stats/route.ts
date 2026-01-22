@@ -120,7 +120,7 @@ export async function GET(req: NextRequest) {
         username: true,
         _count: {
           select: {
-            statusEventsAsOperator: {
+            statusEvents: {
               where: {
                 createdAt: dateFilter.gte || dateFilter.lte ? { ...dateFilter } : undefined,
               },
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
         },
       },
       orderBy: {
-        statusEventsAsOperator: {
+        statusEvents: {
           _count: "desc",
         },
       },
@@ -169,7 +169,7 @@ export async function GET(req: NextRequest) {
       staffPerformance: staffPerformance.map((s) => ({
         id: s.id,
         username: s.username,
-        operationsCount: s._count.statusEventsAsOperator,
+        operationsCount: s._count.statusEvents,
       })),
       summary: {
         recentCases, // Last 7 days
